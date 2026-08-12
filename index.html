@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tzevet Live Schedule</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 24px;
+      padding: 40px 60px;
+      width: 85%;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      margin-bottom: 25px;
+    }
+    .label {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .current .label { color: #38bdf8; }
+    .next .label { color: #94a3b8; }
+    .title {
+      font-size: 4.5rem;
+      font-weight: 800;
+      margin: 10px 0;
+      line-height: 1.1;
+    }
+    .time {
+      font-size: 2.5rem;
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+    .clock {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      font-size: 1.8rem;
+      color: #64748b;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="clock" id="live-clock">--:--:--</div>
+
+  <div class="card current">
+    <div class="label">NOW HAPPENING</div>
+    <div class="title" id="current-event">Loading...</div>
+    <div class="time" id="current-time"></div>
+  </div>
+
+  <div class="card next">
+    <div class="label">UP NEXT</div>
+    <div class="title" id="next-event">Loading...</div>
+    <div class="time" id="next-time"></div>
+  </div>
+
+  <script>
+    // PASTE YOUR PUBLISHED GOOGLE SHEET CSV LINK BELOW
+    const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQe9aUnSWxb5rK3ZvwOM9o5_zyl1B2filBqKUnJSQ4g9RNRY47qsXRgxfehSLKV45SkPHebQs1_ta-W/pub?gid=0&single=true&output=csv';
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('live-clock').innerText = now.toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+
+    function timeToMinutes(timeStr) {
+      if (!timeStr) return -1;
+      const cleanStr = timeStr.trim();
+      const parts = cleanStr.split(':');
+      if (parts.length < 2) return -1;
+      return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+    }
+
+    async function fetchSchedule() {
+      try {
+        const response = await fetch(csvUrl + '&t=' + new Date().getTime());
+        const data = await response.text();
+        
+        const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        const schedule = [];
+
+        // Skip header row (i = 1)
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+          if (cols.length >= 3) {
+            schedule.push({
+              start: cols[0],
+              end: cols[1],
+              event: cols[2],
+              startMin: timeToMinutes(cols[0]),
+              endMin: timeToMinutes(cols[1])
+            });
+          }
+        }
+
+        const now = new Date();
+        const currentMin = now.getHours() * 60 + now.getMinutes();
+
+        let current = null;
+        let next = null;
+
+        for (let i = 0; i < schedule.length; i++) {
+          const item = schedule[i];
+          if (currentMin >= item.startMin && currentMin < item.endMin) {
+            current = item;
+            next = schedule[i + 1] || null;
+            break;
+          } else if (currentMin < item.startMin) {
+            next = item;
+            break;
+          }
+        }
+
+        // Render Current
+        if (current) {
+          document.getElementById('current-event').innerText = current.event;
+          document.getElementById('current-time').innerText = `${current.start} - ${current.end}`;
+        } else {
+          document.getElementById('current-event').innerText = "No Scheduled Activity";
+          document.getElementById('current-time').innerText = "";
+        }
+
+        // Render Next
+        if (next) {
+          document.getElementById('next-event').innerText = next.event;
+          document.getElementById('next-time').innerText = `Starts at ${next.start}`;
+        } else {
+          document.getElementById('next-event').innerText = "End of Day";
+          document.getElementById('next-time').innerText = "";
+        }
+
+      } catch (err) {
+        console.error("Error loading schedule:", err);
+      }
+    }
+
+    fetchSchedule();
+    // Refresh schedule data every 30 seconds
+    setInterval(fetchSchedule, 30000);
+  </script>
+</body>
+</html>

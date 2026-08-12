@@ -166,8 +166,21 @@
     function renderSchedule() {
       if (scheduleData.length === 0) return;
 
+      // Force the current time calculation into your specific target timezone
       const now = new Date();
-      const currentMins = now.getHours() * 60 + now.getMinutes();
+      const timeZone = "America/New_York"; // Change to "Asia/Jerusalem" or your local timezone if needed
+      
+      const options = { timeZone: timeZone, hour: 'numeric', minute: 'numeric', hour12: false };
+      const timeParts = new Intl.DateTimeFormat([], options).formatToParts(now);
+      
+      let hours = 0;
+      let minutes = 0;
+      timeParts.forEach(part => {
+        if (part.type === 'hour') hours = parseInt(part.value, 10);
+        if (part.type === 'minute') minutes = parseInt(part.value, 10);
+      });
+
+      const currentMins = hours * 60 + minutes;
 
       let current = null;
       let next = null;

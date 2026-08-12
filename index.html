@@ -1,228 +1,128 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <!-- Standard metadata telling the browser to render using UTF-8 character encoding -->
-  <meta charset="UTF-8">
-  <title>Tzevet Live Schedule</title>
-
-  <!-- CSS STYLES: Controls the visual appearance and layout of the page -->
-  <style>
-    /* Styles applied to the main page container */
-    body {
-      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; /* Clean modern font */
-      background-color: #0f172a; /* Dark blue/slate background color */
-      color: #f8fafc;            /* Light off-white text color */
-      margin: 0;
-      padding: 0;
-      display: flex;             /* Flexbox layout to center content vertically and horizontally */
-      flex-direction: column;    /* Stack cards vertically */
-      justify-content: center;   /* Center content vertically on screen */
-      align-items: center;       /* Center content horizontally on screen */
-      height: 100vh;             /* Force page height to fit 100% of the screen height */
-      box-sizing: border-box;
-      text-align: center;
-    }
-
-    /* Container box style for "NOW HAPPENING" and "UP NEXT" panels */
-    .card {
-      background: #1e293b;        /* Lighter slate background for contrast against body */
-      border-radius: 24px;        /* Rounded corners */
-      padding: 40px 60px;         /* Inner spacing around text */
-      width: 85%;                 /* Take up 85% of total TV width */
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); /* Subtle shadow for depth */
-      margin-bottom: 25px;        /* Spacing below the card */
-    }
-
-    /* Sub-header labels ("NOW HAPPENING" / "UP NEXT") */
-    .label {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-bottom: 10px;
-    }
-
-    /* Color coding for labels */
-    .current .label { color: #38bdf8; } /* Cyan accent color for current event */
-    .next .label { color: #94a3b8; }    /* Muted gray accent for upcoming event */
-
-    /* Large main title text for activity names */
-    .title {
-      font-size: 4.5rem;
-      font-weight: 800;
-      margin: 10px 0;
-      line-height: 1.1;
-    }
-
-    /* Text style for event time ranges */
-    .time {
-      font-size: 2.5rem;
-      color: #cbd5e1;
-      font-weight: 600;
-    }
-
-    /* Real-time digital clock positioned in the top-right corner */
-    .clock {
-      position: absolute;
-      top: 20px;
-      right: 30px;
-      font-size: 1.8rem;
-      color: #64748b;
-      font-weight: 600;
-    }
-  </style>
-</head>
-<body>
-
-  <!-- HTML ELEMENTS: Placeholders that JavaScript populates dynamically -->
-
-  <!-- Top right live clock display -->
-  <div class="clock" id="live-clock">--:--:--</div>
-
-  <!-- Card 1: Current Event -->
-  <div class="card current">
-    <div class="label">NOW HAPPENING</div>
-    <div class="title" id="current-event">Loading...</div>
-    <div class="time" id="current-time"></div>
-  </div>
-
-  <!-- Card 2: Upcoming Event -->
-  <div class="card next">
-    <div class="label">UP NEXT</div>
-    <div class="title" id="next-event">Loading...</div>
-    <div class="time" id="next-time"></div>
-  </div>
-
-  <!-- JAVASCRIPT: Handles fetching data, calculations, and UI updates -->
-  <script>
-    // Link to the published CSV export of your Google Sheet
+<script>
+    // Link to your published Google Sheet CSV
     const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQe9aUnSWxb5rK3ZvwOM9o5_zyl1B2filBqKUnJSQ4g9RNRY47qsXRgxfehSLKV45SkPHebQs1_ta-W/pub?gid=0&single=true&output=csv';
 
-    // Global memory array to store valid schedule rows and prevent screen flicker if network glitches
-    let cachedSchedule = [];
+    // Holds our active schedule data
+    let activeSchedule = [];
 
-    // FUNCTION: Reads current computer time and updates the live clock display
     function updateClock() {
       const now = new Date();
       document.getElementById('live-clock').innerText = now.toLocaleTimeString();
     }
-    // Run updateClock every 1000ms (1 second)
     setInterval(updateClock, 1000);
 
-    // HELPER FUNCTION: Converts a "HH:MM" 24-hour time string into total minutes since midnight
-    // Example: "14:30" -> (14 * 60) + 30 = 870 minutes (makes comparing times simple math)
+    // Converts "HH:MM" (or "H:MM") string to total minutes from midnight
     function timeToMinutes(timeStr) {
       if (!timeStr) return -1;
-      const cleanStr = timeStr.trim();
+      // Clean up whitespace and any hidden characters
+      const cleanStr = timeStr.trim().replace(/[^\d:]/g, '');
       const parts = cleanStr.split(':');
       if (parts.length < 2) return -1;
       return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
     }
 
-    // MAIN ASYNC FUNCTION: Fetches the schedule CSV from Google Sheets and parses it
     async function fetchSchedule() {
       try {
-        // Appends a unique timestamp query parameter (&nocache=123456) to force browser/servers to bypass cached files
+        // Force fresh fetch using cache-busting timestamp
         const cacheBuster = '&nocache=' + new Date().getTime();
-        
-        // Fetch raw text data from Google Sheets, requesting no browser storage
         const response = await fetch(csvUrl + cacheBuster, { cache: 'no-store' });
         const data = await response.text();
         
-        // Split the raw CSV text by newline into an array of row lines, cleaning whitespace
-        const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        // Parse raw CSV lines
+        const lines = data.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
         const parsedSchedule = [];
 
-        // Loop through each line, starting at index 1 to skip column headers (StartTime, EndTime, Event)
+        // Loop through rows skipping header
         for (let i = 1; i < lines.length; i++) {
-          // Split row into comma-separated columns and remove quotes/spaces
-          const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+          // Robust CSV line splitting (handles quotes)
+          const cols = lines[i].split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
           
-          // Verify row has at least 3 valid columns before processing
           if (cols.length >= 3 && cols[0] && cols[1]) {
-            parsedSchedule.push({
-              start: cols[0],                         // Raw start time string (e.g., "10:00")
-              end: cols[1],                           // Raw end time string (e.g., "10:45")
-              event: cols[2],                         // Event title text
-              startMin: timeToMinutes(cols[0]),       // Start time converted to total minutes
-              endMin: timeToMinutes(cols[1])          // End time converted to total minutes
-            });
+            const startMin = timeToMinutes(cols[0]);
+            const endMin = timeToMinutes(cols[1]);
+
+            // Only add valid time entries
+            if (startMin !== -1 && endMin !== -1) {
+              parsedSchedule.push({
+                start: cols[0],
+                end: cols[1],
+                event: cols[2] || 'Activity',
+                startMin: startMin,
+                endMin: endMin
+              });
+            }
           }
         }
 
-        // Only overwrite cached memory if valid parsed rows were received
+        // Sort schedule chronologically to ensure correct sequence
+        parsedSchedule.sort((a, b) => a.startMin - b.startMin);
+
+        // Always overwrite activeSchedule with fresh data
         if (parsedSchedule.length > 0) {
-          cachedSchedule = parsedSchedule;
+          activeSchedule = parsedSchedule;
+          // Force immediate re-render on new data pull
+          renderSchedule();
         }
 
-        // Trigger the visual UI update
-        renderSchedule();
-
       } catch (err) {
-        // Log errors to developer console and fallback to rendering existing cached schedule
-        console.error("Error loading schedule, using cached data if available:", err);
-        renderSchedule();
+        console.error("Error fetching fresh schedule:", err);
       }
     }
 
-    // RENDER FUNCTION: Determines current/next activity based on current time and updates HTML
     function renderSchedule() {
-      // Do nothing if we don't have schedule data loaded yet
-      if (cachedSchedule.length === 0) return;
+      if (activeSchedule.length === 0) return;
 
-      // Calculate current time in total minutes since midnight
       const now = new Date();
       const currentMin = now.getHours() * 60 + now.getMinutes();
 
       let current = null;
       let next = null;
 
-      // Iterate through the schedule array to find where current time fits
-      for (let i = 0; i < cachedSchedule.length; i++) {
-        const item = cachedSchedule[i];
+      // Find current active slot or next upcoming slot
+      for (let i = 0; i < activeSchedule.length; i++) {
+        const item = activeSchedule[i];
         
-        // Condition A: If current time falls between start and end minutes of an event
         if (currentMin >= item.startMin && currentMin < item.endMin) {
           current = item;
-          next = cachedSchedule[i + 1] || null; // Next event is simply the next item in the array
-          break; // Stop searching
-        } 
-        // Condition B: If current time is before an event start (handles gaps between activities or start of day)
-        else if (currentMin < item.startMin) {
-          next = item; // This event becomes "UP NEXT"
-          break; // Stop searching
+          next = activeSchedule[i + 1] || null;
+          break;
+        } else if (currentMin < item.startMin) {
+          next = item;
+          break;
         }
       }
 
-      // UPDATE HTML DISPLAY: Current Activity Card
+      // Update Current Event Card
+      const currentTitleEl = document.getElementById('current-event');
+      const currentTimeEl = document.getElementById('current-time');
+      
       if (current) {
-        document.getElementById('current-event').innerText = current.event;
-        document.getElementById('current-time').innerText = `${current.start} - ${current.end}`;
+        currentTitleEl.innerText = current.event;
+        currentTimeEl.innerText = `${current.start} - ${current.end}`;
       } else {
-        document.getElementById('current-event').innerText = "No Scheduled Activity";
-        document.getElementById('current-time').innerText = "";
+        currentTitleEl.innerText = "No Scheduled Activity";
+        currentTimeEl.innerText = "";
       }
 
-      // UPDATE HTML DISPLAY: Upcoming Activity Card
+      // Update Next Event Card
+      const nextTitleEl = document.getElementById('next-event');
+      const nextTimeEl = document.getElementById('next-time');
+
       if (next) {
-        document.getElementById('next-event').innerText = next.event;
-        document.getElementById('next-time').innerText = `Starts at ${next.start}`;
+        nextTitleEl.innerText = next.event;
+        nextTimeEl.innerText = `Starts at ${next.start}`;
       } else {
-        document.getElementById('next-event').innerText = "Layla Tov!!!";
-        document.getElementById('next-time').innerText = "";
+        nextTitleEl.innerText = "Layla Tov!!!";
+        nextTimeEl.innerText = "";
       }
     }
 
-    // INITIALIZATION & TIMERS
-
-    // 1. Fetch schedule data immediately when page loads
+    // Run on boot
     fetchSchedule();
 
-    // 2. Re-evaluate current minute vs schedule array every 10 seconds (keeps UI synced smoothly when period ends)
-    setInterval(renderSchedule, 10000);
+    // Check time position every 5 seconds for immediate activity switching
+    setInterval(renderSchedule, 5000);
 
-    // 3. Re-fetch fresh CSV data from Google Sheets every 60 seconds to pull down any schedule edits made during the day
-    setInterval(fetchSchedule, 60000);
+    // Fetch updated CSV data from Google every 15 seconds
+    setInterval(fetchSchedule, 15000);
   </script>
-</body>
-</html>

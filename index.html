@@ -1,128 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Standard metadata telling the browser to render using UTF-8 character encoding -->
+  <meta charset="UTF-8">
+  <title>Tzevet Live Schedule</title>
+
+  <!-- CSS STYLES: Controls the visual appearance and layout of the page -->
+  <style>
+    /* Styles applied to the main page container */
+    body {
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; /* Clean modern font */
+      background-color: #0f172a; /* Dark blue/slate background color */
+      color: #f8fafc;            /* Light off-white text color */
+      margin: 0;
+      padding: 0;
+      display: flex;             /* Flexbox layout to center content vertically and horizontally */
+      flex-direction: column;    /* Stack cards vertically */
+      justify-content: center;   /* Center content vertically on screen */
+      align-items: center;       /* Center content horizontally on screen */
+      height: 100vh;             /* Force page height to fit 100% of the screen height */
+      box-sizing: border-box;
+      text-align: center;
+    }
+
+    /* Container box style for "NOW HAPPENING" and "UP NEXT" panels */
+    .card {
+      background: #1e293b;        /* Lighter slate background for contrast against body */
+      border-radius: 24px;        /* Rounded corners */
+      padding: 40px 60px;         /* Inner spacing around text */
+      width: 85%;                 /* Take up 85% of total TV width */
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); /* Subtle shadow for depth */
+      margin-bottom: 25px;        /* Spacing below the card */
+    }
+
+    /* Sub-header labels ("NOW HAPPENING" / "UP NEXT") */
+    .label {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    /* Color coding for labels */
+    .current .label { color: #38bdf8; } /* Cyan accent color for current event */
+    .next .label { color: #94a3b8; }    /* Muted gray accent for upcoming event */
+
+    /* Large main title text for activity names */
+    .title {
+      font-size: 4.5rem;
+      font-weight: 800;
+      margin: 10px 0;
+      line-height: 1.1;
+    }
+
+    /* Text style for event time ranges */
+    .time {
+      font-size: 2.5rem;
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+
+    /* Real-time digital clock positioned in the top-right corner */
+    .clock {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      font-size: 1.8rem;
+      color: #64748b;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HTML ELEMENTS: Placeholders that JavaScript populates dynamically -->
+
+  <!-- Top right live clock display -->
+  <div class="clock" id="live-clock">--:--:--</div>
+
+  <!-- Card 1: Current Event -->
+  <div class="card current">
+    <div class="label">NOW HAPPENING</div>
+    <div class="title" id="current-event">Loading...</div>
+    <div class="time" id="current-time"></div>
+  </div>
+
+  <!-- Card 2: Upcoming Event -->
+  <div class="card next">
+    <div class="label">UP NEXT</div>
+    <div class="title" id="next-event">Loading...</div>
+    <div class="time" id="next-time"></div>
+  </div>
+
+  <!-- JAVASCRIPT: Handles fetching data, calculations, and UI updates -->
 <script>
-    // Link to your published Google Sheet CSV
+    // 1. PASTE YOUR PUBLISHED GOOGLE SHEET CSV LINK HERE:
     const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQe9aUnSWxb5rK3ZvwOM9o5_zyl1B2filBqKUnJSQ4g9RNRY47qsXRgxfehSLKV45SkPHebQs1_ta-W/pub?gid=0&single=true&output=csv';
 
-    // Holds our active schedule data
-    let activeSchedule = [];
+    let scheduleData = [];
 
+    // Live clock in top corner
     function updateClock() {
       const now = new Date();
       document.getElementById('live-clock').innerText = now.toLocaleTimeString();
     }
     setInterval(updateClock, 1000);
 
-    // Converts "HH:MM" (or "H:MM") string to total minutes from midnight
+    // Convert "14:30" string to 870 total minutes
     function timeToMinutes(timeStr) {
       if (!timeStr) return -1;
-      // Clean up whitespace and any hidden characters
-      const cleanStr = timeStr.trim().replace(/[^\d:]/g, '');
-      const parts = cleanStr.split(':');
+      const clean = timeStr.trim().replace(/[^\d:]/g, '');
+      const parts = clean.split(':');
       if (parts.length < 2) return -1;
-      return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+      const hours = parseInt(parts[0], 10);
+      const mins = parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(mins)) return -1;
+      return hours * 60 + mins;
     }
 
     async function fetchSchedule() {
       try {
-        // Force fresh fetch using cache-busting timestamp
-        const cacheBuster = '&nocache=' + new Date().getTime();
-        const response = await fetch(csvUrl + cacheBuster, { cache: 'no-store' });
-        const data = await response.text();
-        
-        // Parse raw CSV lines
-        const lines = data.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-        const parsedSchedule = [];
+        // Force fresh fetch from Google
+        const timestamp = new Date().getTime();
+        const response = await fetch(csvUrl + '&nocache=' + timestamp);
+        if (!response.ok) return;
 
-        // Loop through rows skipping header
+        const text = await response.text();
+        const lines = text.split('\n');
+        const parsed = [];
+
+        // Loop over lines, skip header row (i = 1)
         for (let i = 1; i < lines.length; i++) {
-          // Robust CSV line splitting (handles quotes)
-          const cols = lines[i].split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-          
-          if (cols.length >= 3 && cols[0] && cols[1]) {
-            const startMin = timeToMinutes(cols[0]);
-            const endMin = timeToMinutes(cols[1]);
+          const line = lines[i].trim();
+          if (!line) continue;
 
-            // Only add valid time entries
-            if (startMin !== -1 && endMin !== -1) {
-              parsedSchedule.push({
+          // Simple split by comma
+          const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+
+          if (cols.length >= 3 && cols[0] && cols[1]) {
+            const startMins = timeToMinutes(cols[0]);
+            const endMins = timeToMinutes(cols[1]);
+
+            if (startMins !== -1 && endMins !== -1) {
+              parsed.push({
                 start: cols[0],
                 end: cols[1],
                 event: cols[2] || 'Activity',
-                startMin: startMin,
-                endMin: endMin
+                startMin: startMins,
+                endMin: endMins
               });
             }
           }
         }
 
-        // Sort schedule chronologically to ensure correct sequence
-        parsedSchedule.sort((a, b) => a.startMin - b.startMin);
-
-        // Always overwrite activeSchedule with fresh data
-        if (parsedSchedule.length > 0) {
-          activeSchedule = parsedSchedule;
-          // Force immediate re-render on new data pull
+        if (parsed.length > 0) {
+          scheduleData = parsed;
           renderSchedule();
         }
-
-      } catch (err) {
-        console.error("Error fetching fresh schedule:", err);
+      } catch (e) {
+        console.error("Fetch error:", e);
       }
     }
 
     function renderSchedule() {
-      if (activeSchedule.length === 0) return;
+      if (scheduleData.length === 0) return;
 
       const now = new Date();
-      const currentMin = now.getHours() * 60 + now.getMinutes();
+      const currentMins = now.getHours() * 60 + now.getMinutes();
 
       let current = null;
       let next = null;
 
-      // Find current active slot or next upcoming slot
-      for (let i = 0; i < activeSchedule.length; i++) {
-        const item = activeSchedule[i];
-        
-        if (currentMin >= item.startMin && currentMin < item.endMin) {
+      for (let i = 0; i < scheduleData.length; i++) {
+        const item = scheduleData[i];
+        if (currentMins >= item.startMin && currentMins < item.endMin) {
           current = item;
-          next = activeSchedule[i + 1] || null;
+          next = scheduleData[i + 1] || null;
           break;
-        } else if (currentMin < item.startMin) {
+        } else if (currentMins < item.startMin) {
           next = item;
           break;
         }
       }
 
-      // Update Current Event Card
-      const currentTitleEl = document.getElementById('current-event');
-      const currentTimeEl = document.getElementById('current-time');
-      
+      // Update Current Event
       if (current) {
-        currentTitleEl.innerText = current.event;
-        currentTimeEl.innerText = `${current.start} - ${current.end}`;
+        document.getElementById('current-event').innerText = current.event;
+        document.getElementById('current-time').innerText = `${current.start} - ${current.end}`;
       } else {
-        currentTitleEl.innerText = "No Scheduled Activity";
-        currentTimeEl.innerText = "";
+        document.getElementById('current-event').innerText = "No Scheduled Activity";
+        document.getElementById('current-time').innerText = "";
       }
 
-      // Update Next Event Card
-      const nextTitleEl = document.getElementById('next-event');
-      const nextTimeEl = document.getElementById('next-time');
-
+      // Update Next Event
       if (next) {
-        nextTitleEl.innerText = next.event;
-        nextTimeEl.innerText = `Starts at ${next.start}`;
+        document.getElementById('next-event').innerText = next.event;
+        document.getElementById('next-time').innerText = `Starts at ${next.start}`;
       } else {
-        nextTitleEl.innerText = "Layla Tov!!!";
-        nextTimeEl.innerText = "";
+        document.getElementById('next-event').innerText = "Layla Tov!!!";
+        document.getElementById('next-time').innerText = "";
       }
     }
 
-    // Run on boot
+    // Startup
     fetchSchedule();
-
-    // Check time position every 5 seconds for immediate activity switching
+    
+    // Check current time every 5 seconds
     setInterval(renderSchedule, 5000);
-
-    // Fetch updated CSV data from Google every 15 seconds
+    
+    // Fetch new Google Sheets data every 15 seconds
     setInterval(fetchSchedule, 15000);
   </script>
+  </body>
+</html>

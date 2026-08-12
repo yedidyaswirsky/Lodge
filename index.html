@@ -168,7 +168,7 @@
 
       // Force the current time calculation into your specific target timezone
       const now = new Date();
-      const timeZone = "America/New_York"; // Change to "Asia/Jerusalem" or your local timezone if needed
+      const timeZone = "America/Chicago"; // Change to "Asia/Jerusalem" or your local timezone if needed
       
       const options = { timeZone: timeZone, hour: 'numeric', minute: 'numeric', hour12: false };
       const timeParts = new Intl.DateTimeFormat([], options).formatToParts(now);

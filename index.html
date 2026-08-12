@@ -76,6 +76,9 @@
     // PASTE YOUR PUBLISHED GOOGLE SHEET CSV LINK BELOW
     const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQe9aUnSWxb5rK3ZvwOM9o5_zyl1B2filBqKUnJSQ4g9RNRY47qsXRgxfehSLKV45SkPHebQs1_ta-W/pub?gid=0&single=true&output=csv';
 
+    // Store the last valid schedule to prevent flickering on bad refreshes
+    let cachedSchedule = [];
+
     function updateClock() {
       const now = new Date();
       document.getElementById('live-clock').innerText = now.toLocaleTimeString();
@@ -92,17 +95,19 @@
 
     async function fetchSchedule() {
       try {
-        const response = await fetch(csvUrl + '&t=' + new Date().getTime());
+        // Cache-busting parameter forced on every fetch
+        const cacheBuster = '&nocache=' + new Date().getTime();
+        const response = await fetch(csvUrl + cacheBuster, { cache: 'no-store' });
         const data = await response.text();
         
         const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        const schedule = [];
+        const parsedSchedule = [];
 
         // Skip header row (i = 1)
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
-          if (cols.length >= 3) {
-            schedule.push({
+          if (cols.length >= 3 && cols[0] && cols[1]) {
+            parsedSchedule.push({
               start: cols[0],
               end: cols[1],
               event: cols[2],
@@ -112,50 +117,64 @@
           }
         }
 
-        const now = new Date();
-        const currentMin = now.getHours() * 60 + now.getMinutes();
-
-        let current = null;
-        let next = null;
-
-        for (let i = 0; i < schedule.length; i++) {
-          const item = schedule[i];
-          if (currentMin >= item.startMin && currentMin < item.endMin) {
-            current = item;
-            next = schedule[i + 1] || null;
-            break;
-          } else if (currentMin < item.startMin) {
-            next = item;
-            break;
-          }
+        // Only update our schedule array if we actually got valid rows back
+        if (parsedSchedule.length > 0) {
+          cachedSchedule = parsedSchedule;
         }
 
-        // Render Current
-        if (current) {
-          document.getElementById('current-event').innerText = current.event;
-          document.getElementById('current-time').innerText = `${current.start} - ${current.end}`;
-        } else {
-          document.getElementById('current-event').innerText = "No Scheduled Activity";
-          document.getElementById('current-time').innerText = "";
-        }
-
-        // Render Next
-        if (next) {
-          document.getElementById('next-event').innerText = next.event;
-          document.getElementById('next-time').innerText = `Starts at ${next.start}`;
-        } else {
-          document.getElementById('next-event').innerText = "End of Day";
-          document.getElementById('next-time').innerText = "";
-        }
+        renderSchedule();
 
       } catch (err) {
-        console.error("Error loading schedule:", err);
+        console.error("Error loading schedule, using cached data if available:", err);
+        renderSchedule();
+      }
+    }
+
+    function renderSchedule() {
+      if (cachedSchedule.length === 0) return;
+
+      const now = new Date();
+      const currentMin = now.getHours() * 60 + now.getMinutes();
+
+      let current = null;
+      let next = null;
+
+      for (let i = 0; i < cachedSchedule.length; i++) {
+        const item = cachedSchedule[i];
+        if (currentMin >= item.startMin && currentMin < item.endMin) {
+          current = item;
+          next = cachedSchedule[i + 1] || null;
+          break;
+        } else if (currentMin < item.startMin) {
+          next = item;
+          break;
+        }
+      }
+
+      // Render Current
+      if (current) {
+        document.getElementById('current-event').innerText = current.event;
+        document.getElementById('current-time').innerText = `${current.start} - ${current.end}`;
+      } else {
+        document.getElementById('current-event').innerText = "No Scheduled Activity";
+        document.getElementById('current-time').innerText = "";
+      }
+
+      // Render Next
+      if (next) {
+        document.getElementById('next-event').innerText = next.event;
+        document.getElementById('next-time').innerText = `Starts at ${next.start}`;
+      } else {
+        document.getElementById('next-event').innerText = "End of Day";
+        document.getElementById('next-time').innerText = "";
       }
     }
 
     fetchSchedule();
-    // Refresh schedule data every 30 seconds
-    setInterval(fetchSchedule, 30000);
+    // Re-check time every 10 seconds for smooth transitions
+    setInterval(renderSchedule, 10000);
+    // Refresh schedule data from Google Sheets every 60 seconds
+    setInterval(fetchSchedule, 60000);
   </script>
 </body>
 </html>

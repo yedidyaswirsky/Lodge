@@ -62,14 +62,14 @@
     }
 
     /* Real-time digital clock positioned in the top-right corner */
-    .clock {
+    /* .clock {
       position: absolute;
       top: 20px;
       right: 30px;
       font-size: 1.8rem;
       color: #64748b;
       font-weight: 600;
-    }
+    } */
   </style>
 </head>
 <body>
@@ -77,7 +77,7 @@
   <!-- HTML ELEMENTS: Placeholders that JavaScript populates dynamically -->
 
   <!-- Top right live clock display -->
-  <div class="clock" id="live-clock">--:--:--</div>
+  <!--<div class="clock" id="live-clock">--:--:--</div>*/-->
 
   <!-- Card 1: Current Event -->
   <div class="card current">
@@ -101,10 +101,10 @@
     let scheduleData = [];
 
     // Live clock in top corner
-    function updateClock() {
+    /*function updateClock() {
       const now = new Date();
       document.getElementById('live-clock').innerText = now.toLocaleTimeString();
-    }
+    }*/
     setInterval(updateClock, 1000);
 
     // Convert "14:30" string to 870 total minutes
